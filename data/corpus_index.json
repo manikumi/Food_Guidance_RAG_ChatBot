@@ -1,0 +1,51 @@
+[
+  {
+    "document_id": "cold-food-storage",
+    "document_name": "Cold Food Storage Chart",
+    "publisher": "USDA / FoodSafety.gov",
+    "year": 2022,
+    "source_url": "https://www.foodsafety.gov/food-safety-charts/cold-food-storage-charts"
+  },
+  {
+    "document_id": "who-healthy-diet",
+    "document_name": "WHO Healthy Diet Fact Sheet",
+    "publisher": "WHO",
+    "year": 2023,
+    "source_url": "https://www.who.int/news-room/fact-sheets/detail/healthy-diet"
+  },
+  {
+    "document_id": "fao-who-healthy-diets",
+    "document_name": "Food-Based Dietary Guidelines",
+    "publisher": "FAO / WHO",
+    "year": 2019,
+    "source_url": "https://www.fao.org/nutrition/education/food-dietary-guidelines/en/"
+  },
+  {
+    "document_id": "who-five-keys",
+    "document_name": "WHO Five Keys to Safer Food",
+    "publisher": "WHO",
+    "year": 2015,
+    "source_url": "https://www.who.int/publications/i/item/9789241594639"
+  },
+  {
+    "document_id": "eatwell-guide",
+    "document_name": "The Eatwell Guide",
+    "publisher": "NHS / Public Health England",
+    "year": 2016,
+    "source_url": "https://www.nhs.uk/live-well/eat-well/the-eatwell-guide/"
+  },
+  {
+    "document_id": "fsa-chill",
+    "document_name": "FSA Chilled Food Safety Guidance",
+    "publisher": "Food Standards Agency (UK)",
+    "year": 2021,
+    "source_url": "https://www.food.gov.uk/safety-hygiene/chilling"
+  },
+  {
+    "document_id": "kitchen-companion",
+    "document_name": "Kitchen Companion",
+    "publisher": "USDA / FSIS",
+    "year": 2020,
+    "source_url": "https://www.fsis.usda.gov/food-safety/safe-food-handling-and-preparation/food-safety-basics/kitchen-companion"
+  }
+]
