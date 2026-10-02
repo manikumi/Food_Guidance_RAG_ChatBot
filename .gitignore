@@ -6,7 +6,8 @@
 venv/
 
 # ChromaDB vector store
-data/vectorstore/
+# Kept tracked so Streamlit Cloud can serve the pre-built index.
+# data/vectorstore/
 
 # Python cache
 __pycache__/
