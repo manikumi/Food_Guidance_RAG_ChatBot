@@ -3,6 +3,7 @@
 > **Document:** `docs/architecture.md`
 > **Project:** Food Guidance RAG ChatBot
 > **Created:** 2026-09-28
+> **Updated:** 2026-10-03 — reflects Phase 7 completion, FastAPI backend (Vercel), Next.js frontend (Railway), multi-session chat with conversation history
 
 ---
 
@@ -19,12 +20,14 @@
    - 3.6 [Answer Generator](#36-answer-generator)
    - 3.7 [Citation Layer](#37-citation-layer)
    - 3.8 [Refusal Handler](#38-refusal-handler)
-   - 3.9 [Chat Interface](#39-chat-interface)
+   - 3.9 [Chat Interface — Next.js Frontend (Railway)](#39-chat-interface--nextjs-frontend-railway)
+   - 3.10 [REST API Backend (Vercel)](#310-rest-api-backend-vercel)
 4. [Data Models](#4-data-models)
    - 4.1 [Document Record](#41-document-record)
    - 4.2 [Chunk Record](#42-chunk-record)
    - 4.3 [Retrieved Context Object](#43-retrieved-context-object)
    - 4.4 [Chat Response Object](#44-chat-response-object)
+   - 4.5 [Chat Session & Message Models](#45-chat-session--message-models)
 5. [Corpus](#5-corpus)
 6. [Retrieval Strategy](#6-retrieval-strategy)
 7. [Prompt Design](#7-prompt-design)
@@ -62,54 +65,43 @@ Core promise: Every answer is either sourced from the corpus with a citation,
 ## 2. High-Level Architecture Diagram
 
 ```
-                        ┌─────────────────────────────────────────────┐
-                        │              OFFLINE PIPELINE                │
-                        │  [STEPS 3.1 & 3.2 PRE-COMPLETED]            │
-                        │                                              │
-  [docs/blocks.jsonl]   │  Load (loader.py) → Embed → Index            │
-          │             └─────────────────────┬───────────────────────┘
-          │                                   │
-          ▼                                   ▼
-  ┌──────────────────┐              ┌─────────────────┐
-  │  blocks.jsonl    │              │  Vector Store   │
-  │  (docs/ folder)  │              │  (ChromaDB      │
-  │  1,001 blocks    │              │   + metadata)   │
-  │  pre-parsed &    │              │                 │
-  │  pre-chunked     │              │                 │
-  └──────────────────┘              └────────┬────────┘
-                                             │
-                        ┌────────────────────┘
-                        │         ONLINE (QUERY) PIPELINE
-                        │
-          User Input ───►
-                        │
-                        ▼
-              ┌──────────────────┐
-              │  Query Classifier │  ──► Out-of-scope? ──► Refusal Handler ──► Response
-              └────────┬─────────┘                         (mode: OOS)
-                       │ In-scope
-                       ▼
-              ┌──────────────────┐
-              │    Retriever     │  (global or per-document)
-              └────────┬─────────┘
-                       │ Top-k chunks + metadata
-                       ▼
-              ┌──────────────────┐
-              │  Context Check   │  ──► No relevant chunks? ──► Refusal Handler ──► Response
-              └────────┬─────────┘                              (mode: NIC)
-                       │ Relevant chunks found
-                       ▼
-              ┌──────────────────┐
-              │  Answer Generator│  (LLM with system prompt, chunks as context)
-              └────────┬─────────┘
-                       │ Raw answer + chunk references
-                       ▼
-              ┌──────────────────┐
-              │  Citation Layer  │  (attach structured citations per claim)
-              └────────┬─────────┘
-                       │ Final answer + citations
-                       ▼
-                  Chat Response
+┌──────────────────────────────────────────────────────────────────────┐
+│                         OFFLINE PIPELINE                             │
+│  [STEPS 3.1 & 3.2 PRE-COMPLETED]                                    │
+│                                                                      │
+│  docs/blocks.jsonl  →  loader.py  →  embedder.py  →  ChromaDB       │
+└──────────────────────────────────────────────────┬───────────────────┘
+                                                   │
+                                         data/vectorstore/
+                                                   │
+┌──────────────────────┐     REST API      ┌───────┴───────────────────┐
+│  Next.js Frontend    │ ◄────────────────► │  FastAPI Backend          │
+│  (Railway)           │                   │  (Vercel)                  │
+│                      │                   │                            │
+│  • Multi-session     │                   │  api/main.py               │
+│    sidebar           │                   │  POST /sessions/{id}/msgs  │
+│  • Chat history      │                   │        │                   │
+│  • Message editing   │                   │        ▼                   │
+│  • Shareable links   │                   │  src/pipeline.run_query()  │
+│  • Doc filter        │                   │        │                   │
+└──────────────────────┘                   │   ┌────┴────┐             │
+                                           │   │Classify │             │
+                                           │   └────┬────┘             │
+                                           │        │ In-scope         │
+                                           │   ┌────┴────┐             │
+                                           │   │Retrieve │ (ChromaDB)  │
+                                           │   └────┬────┘             │
+                                           │        │ chunks found     │
+                                           │   ┌────┴────┐             │
+                                           │   │Generate │ (Groq LLM)  │
+                                           │   └────┬────┘             │
+                                           │        │                  │
+                                           │   ┌────┴────┐             │
+                                           │   │ Cite    │             │
+                                           │   └────┬────┘             │
+                                           │        ▼                  │
+                                           │   ChatResponse JSON       │
+                                           └───────────────────────────┘
 ```
 
 ---
@@ -345,23 +337,72 @@ nutritionist, or your physician for personalised guidance.
 
 ---
 
-### 3.9 Chat Interface
+### 3.9 Chat Interface — Next.js Frontend (Railway)
 
-**Responsibility:** Expose the RAG pipeline as a conversational interface.
+**Responsibility:** Production-grade chat UI deployed to Railway, consuming the FastAPI backend via REST.
 
-**Options (choose one):**
+**Technology:** Next.js 14 (App Router), TypeScript, Vanilla CSS, React.
 
-| Interface | Library | Notes |
+**Key features:**
+
+| Feature | Implementation |
+|---|---|
+| Multiple chat sessions | Sidebar with full session list; new session on button click |
+| Chat history display | Scrollable message area, timestamps, source badges |
+| Follow-up question support | Full conversation history forwarded to LLM on each turn |
+| Chat persistence | Session ID saved to `localStorage`; loaded from API on reopen |
+| Message editing | Inline edit → truncate history → re-run pipeline from edit point |
+| Shareable link | Modal with copyable URL; read-only `/share/[sessionId]` view page |
+| Document filter | Dropdown in header scopes retrieval to a single source document |
+| Typing indicator | Three-dot animated indicator during LLM response |
+| Suggestion cards | Welcome screen with pre-filled example questions |
+| Markdown rendering | `react-markdown` + `remark-gfm` for citations, tables, code blocks |
+
+**Entry points:**
+- `frontend/src/app/page.tsx` — main chat interface
+- `frontend/src/app/share/[sessionId]/page.tsx` — shareable read-only view
+- `frontend/src/lib/api.ts` — typed REST API client
+
+**Session state:** Managed server-side in the FastAPI backend (`_sessions` dict). The frontend holds only the active session ID in `localStorage` for persistence across page refreshes.
+
+---
+
+### 3.10 REST API Backend (Vercel)
+
+**Responsibility:** Stateful FastAPI backend deployed to Vercel serverless functions, orchestrating the RAG pipeline and managing chat sessions.
+
+**Entry point:** `api/main.py`
+
+**Session management:** In-memory Python dict (`_sessions`). For production scale, replace with Redis or a managed database.
+
+**Endpoints:**
+
+| Method | Path | Description |
 |---|---|---|
-| Web UI | `Streamlit` | Fastest to prototype; single-file app |
-| CLI | `Click` / `Rich` | Good for testing retrieval quality |
-| REST API | `FastAPI` | Production-ready; enables frontend separation |
+| GET | `/health` | Health check |
+| GET | `/documents` | List available source documents |
+| GET | `/sessions` | List all sessions (sorted newest-first) |
+| POST | `/sessions` | Create new empty session |
+| GET | `/sessions/{id}` | Get full session with all messages |
+| PATCH | `/sessions/{id}` | Update session title or document filter |
+| DELETE | `/sessions/{id}` | Delete session |
+| GET | `/sessions/{id}/share` | Return shareable read-only snapshot |
+| POST | `/sessions/{id}/messages` | Send message, run pipeline, get response |
+| PATCH | `/sessions/{id}/messages/{idx}` | Edit message, truncate history, re-run |
 
-**Recommended for prototype:** Streamlit — provides chat history, markdown rendering, and file upload in ~100 lines.
+**Conversation history flow:**
+```
+POST /sessions/{id}/messages
+  body: { content, filter_doc? }
+    │
+    ├── Appends user message to session
+    ├── Builds chat_history from prior session messages
+    ├── Calls run_query(content, filter_doc, chat_history=history)
+    │       └── generator.py injects history as LLM context turns
+    └── Returns { user_message, assistant_message, session }
+```
 
-**Session state:**
-- `st.session_state.messages` — conversation history
-- `st.session_state.filter_doc` — optional per-document filter dropdown
+**CORS:** `FRONTEND_ORIGIN` env var restricts access to the Railway frontend URL.
 
 ---
 
@@ -432,6 +473,42 @@ class ChatResponse:
     refusal_mode: str | None      # "NIC" | "OOS" | None
     documents_used: list[str]     # document_names that contributed
     is_cross_document: bool
+```
+
+---
+
+### 4.5 Chat Session & Message Models
+
+Defined in `api/main.py` (Pydantic models for the REST layer):
+
+```python
+class ChatMessage(BaseModel):
+    role: str                     # "user" | "assistant"
+    content: str                  # message text (markdown for assistant)
+    refusal_mode: Optional[str]   # "NIC" | "OOS" | None
+    is_cross_document: bool
+    documents_used: List[str]
+    timestamp: str                # ISO 8601 UTC
+
+class ChatSession(BaseModel):
+    session_id: str               # UUID4
+    title: str                    # auto-set from first user message
+    created_at: str
+    updated_at: str
+    messages: List[ChatMessage]
+    filter_doc: Optional[str]     # active document scope filter
+```
+
+**Chat history format forwarded to pipeline:**
+```python
+# List of prior turns (excludes current user message)
+history = [
+    {"role": "user",      "content": "How much salt per day?"},
+    {"role": "assistant", "content": "No more than 5g ... [REF-1]"},
+    {"role": "user",      "content": "What about potassium?"},
+    ...
+]
+# Injected by generator.py as conversation context before the current query
 ```
 
 ---
@@ -582,8 +659,29 @@ Choose unsaturated oils like olive or sunflower oil. [REF-2]
 ```
 Food_Guidance_RAG_ChatBot/
 │
+├── api/
+│   └── main.py                     # ✅ FastAPI backend (deployed to Vercel)
+│                                   #    Sessions, messages, share endpoints
+│
+├── frontend/                       # ✅ Next.js 14 frontend (deployed to Railway)
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── layout.tsx          # Root layout + SEO metadata
+│   │   │   ├── page.tsx            # Main ChatGPT-style chat interface
+│   │   │   ├── globals.css         # Full design system (dark theme, animations)
+│   │   │   └── share/
+│   │   │       └── [sessionId]/
+│   │   │           └── page.tsx    # Read-only shareable conversation view
+│   │   ├── lib/
+│   │   │   └── api.ts              # Typed REST API client
+│   │   └── types/
+│   │       └── index.ts            # TypeScript types (mirrors Pydantic models)
+│   ├── package.json
+│   ├── next.config.js
+│   └── tsconfig.json
+│
 ├── data/
-│   ├── vectorstore/                # ChromaDB persistent storage (built from blocks.jsonl)
+│   ├── vectorstore/                # ChromaDB persistent storage (committed for deployment)
 │   └── corpus_index.json           # document metadata registry (built by loader.py)
 │
 │   NOTE: data/raw/ and data/chunks/ are NOT needed.
@@ -591,67 +689,80 @@ Food_Guidance_RAG_ChatBot/
 │
 ├── docs/
 │   ├── blocks.jsonl                # ✅ PRE-BUILT: 1,001 blocks from 7 documents
-│   │                               #    Replaces: data/raw/, data/chunks/chunks.jsonl,
-│   │                               #              fetcher.py, parsers, chunking scripts
+│   ├── architecture.md             # this file
+│   ├── implementation-plan.md
 │   ├── problemStatement.md
-│   ├── problemStatement.txt
-│   └── architecture.md             # this file
+│   └── stitch-prompt.md            # ✅ Google Stitch UI design prompt
 │
 ├── src/
 │   ├── ingest/
-│   │   └── loader.py               # ✅ ENTRY POINT: load blocks.jsonl → ChunkRecord objects
-│   │                               #    Replaces: fetcher.py, parser_pdf.py, parser_html.py
-│   │                               #              chunker.py, section_splitter.py, table_handler.py
+│   │   ├── loader.py               # load blocks.jsonl → ChunkRecord objects
+│   │   └── models.py               # ChunkRecord, DocumentRecord dataclasses
 │   ├── embedding/
-│   │   └── embedder.py             # embed ChunkRecords + upsert to vector store
+│   │   └── embedder.py             # embed ChunkRecords + upsert to ChromaDB
 │   ├── retrieval/
 │   │   ├── retriever.py            # global + filtered retrieval
 │   │   └── reranker.py             # optional cross-encoder re-ranking
 │   ├── generation/
-│   │   ├── classifier.py           # query intent classifier
-│   │   ├── generator.py            # LLM answer generation
+│   │   ├── classifier.py           # query intent classifier (Groq LLM)
+│   │   ├── generator.py            # LLM answer generation + chat history support
 │   │   ├── citation_builder.py     # REF-N → structured citations
 │   │   └── refusal_handler.py      # NIC and OOS refusal templates
-│   └── pipeline.py                 # end-to-end RAG pipeline orchestrator
+│   └── pipeline.py                 # run_query() orchestrator (accepts chat_history)
 │
 ├── app/
-│   └── streamlit_app.py            # Streamlit chat interface
+│   └── streamlit_app.py            # Legacy Streamlit interface (local dev / fallback)
 │
 ├── scripts/
-│   ├── build_index.py              # ✅ REPLACES build_corpus.py: runs loader + embed + index only
+│   ├── build_index.py              # offline: load + embed + index pipeline
 │   └── query_cli.py                # CLI tool for retrieval testing
 │
 ├── tests/
-│   ├── test_loader.py              # ✅ REPLACES test_chunker.py
+│   ├── test_loader.py
 │   ├── test_retriever.py
 │   └── test_pipeline.py
 │
-├── .env                            # OPENAI_API_KEY, model configs
-├── requirements.txt
-└── README.md
+├── .env                            # GROQ_API_KEY, model configs (not committed)
+├── requirements.txt                # Python backend dependencies
+├── vercel.json                     # ✅ Vercel deployment config (backend)
+├── railway.json                    # ✅ Railway deployment config (frontend)
+└── deployment-plan.md              # Step-by-step deployment guide
 ```
 
 ---
 
 ## 11. Technology Stack
 
+### Backend
+
 | Layer | Library / Tool | Purpose | Status |
 |---|---|---|---|
 | **Data loading** | `json` (stdlib) | Load `docs/blocks.jsonl` → `ChunkRecord` objects | ✅ Replaces 3.1 & 3.2 |
-| **PDF parsing** | `PyMuPDF` (`fitz`) | Extract text + structure from PDFs | ⛔ Not needed — blocks.jsonl pre-parsed |
-| **HTML parsing** | `BeautifulSoup4` | Extract prose from web pages | ⛔ Not needed — blocks.jsonl pre-parsed |
-| **Chunking** | `LangChain RecursiveCharacterTextSplitter` | Recursive splitting with overlap | ⛔ Not needed — blocks.jsonl pre-chunked |
-| **Embedding** | `text-embedding-3-small` (OpenAI) | Dense vector generation | ✅ Required |
-| **Embedding (local)** | `sentence-transformers` (`all-MiniLM-L6-v2`) | Offline fallback | ✅ Required |
-| **Vector store** | `ChromaDB` | Persistent local vector DB with metadata filter | ✅ Required |
-| **LLM** | `GPT-4o` via OpenAI API | Answer generation | ✅ Required |
-| **LLM (local)** | `Ollama` + `Llama 3` | Offline fallback | ✅ Required |
+| **PDF parsing** | `PyMuPDF` (`fitz`) | Extract text + structure from PDFs | ⛔ Not needed — pre-parsed |
+| **HTML parsing** | `BeautifulSoup4` | Extract prose from web pages | ⛔ Not needed — pre-parsed |
+| **Chunking** | `LangChain RecursiveCharacterTextSplitter` | Recursive splitting with overlap | ⛔ Not needed — pre-chunked |
+| **Embedding** | `sentence-transformers` (`BAAI/bge-large-en-v1.5`) | Dense vector generation (local) | ✅ Active |
+| **Vector store** | `ChromaDB` | Persistent local vector DB with metadata filter | ✅ Active |
+| **LLM — Classifier** | `Groq` + `openai/gpt-oss-120b` (or `qwen/qwen3-27b`) | Intent classification | ✅ Active |
+| **LLM — Generator** | `Groq` + `openai/gpt-oss-120b` (or `qwen/qwen3-27b`) | Answer generation with chat history | ✅ Active |
 | **Re-ranking** | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Optional precision boost | ✅ Optional |
-| **Orchestration** | `LangChain` | Pipeline chaining (optional) | ✅ Optional |
-| **Chat UI** | `Streamlit` | Prototype web interface | ✅ Required |
-| **REST API** | `FastAPI` | Production API layer | ✅ Required |
-| **Testing** | `pytest` | Unit + integration tests | ✅ Required |
-| **Config** | `python-dotenv` | Environment variable management | ✅ Required |
+| **REST API** | `FastAPI` + `uvicorn` | Backend API; session & pipeline orchestration | ✅ Active |
+| **Backend deployment** | `Vercel` (serverless Python) | Hosts `api/main.py` | ✅ Active |
+| **Config** | `python-dotenv` | Environment variable management | ✅ Active |
+| **Testing** | `pytest` | Unit + integration tests | ✅ Active |
+
+### Frontend
+
+| Layer | Library / Tool | Purpose | Status |
+|---|---|---|---|
+| **Framework** | `Next.js 14` (App Router) | React SSR/SPA frontend | ✅ Active |
+| **Language** | `TypeScript` | Type-safe API client and components | ✅ Active |
+| **Styling** | Vanilla CSS (custom properties) | Full design system, dark theme | ✅ Active |
+| **Markdown** | `react-markdown` + `remark-gfm` | Renders citations, tables, code blocks | ✅ Active |
+| **Animations** | CSS keyframes + `framer-motion` | Micro-animations, transitions | ✅ Active |
+| **Dates** | `date-fns` | Message timestamp formatting | ✅ Active |
+| **Frontend deployment** | `Railway` | Hosts Next.js frontend | ✅ Active |
+| **Legacy UI** | `Streamlit` | Local dev / fallback interface | ✅ Retained |
 
 ---
 
@@ -693,31 +804,38 @@ Step 2 (NEW) — Embed & Index   (was Step 4)
 ### Online (Query Phase)
 
 ```
-Step 1 — Receive user query via Streamlit / FastAPI
+Step 1 — Receive user message via POST /sessions/{id}/messages (FastAPI)
+    → Append user message to session store
+    → Build chat_history from all prior session messages
 
 Step 2 — Classify (classifier.py)
     → keyword check → if OOS keyword found → OOS Refusal (stop)
-    → LLM intent classification → if MEDICAL/WEIGHT → OOS Refusal (stop)
+    → Groq LLM intent classification → if MEDICAL/WEIGHT → OOS Refusal (stop)
 
 Step 3 — Retrieve (retriever.py)
-    → global or filtered ChromaDB query
-    → returns top-k chunks + similarity scores
+    → global or filtered ChromaDB query (filter from session.filter_doc)
+    → returns top-k chunks + cosine similarity scores
 
 Step 4 — Relevance check
-    → if max(scores) < 0.35 → NIC Refusal (stop)
+    → if max(scores) < 0.55 → NIC Refusal (stop)
     → if chunks span ≥ 2 docs → set is_cross_document = True
 
 Step 5 — Generate (generator.py)
-    → build prompt: system prompt + user query + REF-N chunks
-    → call LLM
+    → build prompt:
+        [SYSTEM] system_prompt
+        [prior turns from chat_history]   ← enables follow-up questions
+        [USER] current query + REF-N context chunks
+    → call Groq LLM (openai/gpt-oss-120b)
     → if response == "NOT_IN_CORPUS" → NIC Refusal (stop)
 
 Step 6 — Build citations (citation_builder.py)
     → map [REF-N] markers to chunk metadata
     → format inline citations + reference block
 
-Step 7 — Return ChatResponse to interface
-    → Streamlit renders answer + citations in markdown
+Step 7 — Return ChatResponse → FastAPI serialises as JSON
+    → Appended to session.messages
+    → Next.js frontend renders markdown answer + source badges
+    → Session title auto-set from first user message
 ```
 
 ---
@@ -729,11 +847,14 @@ Step 7 — Return ChatResponse to interface
 | **Use `docs/blocks.jsonl` instead of live ingestion** | Saves ingestion + chunking time; data pre-validated | Corpus is frozen at collection date; adding new docs requires re-ingestion |
 | Section-aware chunking (pre-applied in blocks.jsonl) | Preserves numbered recommendations and table integrity | Chunk sizes vary; tables may be oversized; no adjustable overlap |
 | ChromaDB over Pinecone | Local, no API cost, persistent disk storage | Scales to ~1M chunks; not suitable for production at 10M+ |
-| GPT-4o for generation | Best instruction-following for strict grounding constraints | API cost per query |
+| **Groq + `openai/gpt-oss-120b` for generation** | Fast inference, instruction-following for strict grounding, free tier available | Hosted API dependency; latency varies with Groq load |
+| **`BAAI/bge-large-en-v1.5` for embedding** | High quality, runs locally via sentence-transformers, no API cost | ~1.3 GB download on first cold start |
 | Keyword guard before LLM classifier | Deterministic, zero-latency for obvious OOS queries | May over-block edge cases with keyword matches in context |
-| No conversation memory | Keeps grounding strict; no risk of prior turns polluting citations | Chatbot does not maintain multi-turn context by default |
+| **Conversation history injected into LLM context** | Enables follow-up questions while keeping grounding strict | History grows; very long sessions may hit context window limits |
+| In-memory session store in FastAPI | Simple, zero-dependency; fast reads/writes | Sessions lost on server restart; not suitable for multi-instance deployments without Redis |
+| **Frontend on Railway, backend on Vercel** | Each platform is best-suited to its workload (Node vs Python serverless) | Two deployments to manage; requires CORS configuration |
 | Per-document answer format for cross-doc | Prevents source blending; attribution stays clean | Longer, more complex responses |
-| Minimum score threshold (0.35) | Prevents low-confidence answers from being presented as fact | May refuse answerable questions with unusual phrasing |
+| Minimum score threshold (0.55) | Prevents low-confidence answers from being presented as fact | May refuse answerable questions with unusual phrasing |
 
 ---
 

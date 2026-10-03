@@ -12,8 +12,7 @@ load_dotenv()
 
 
 def get_embedding_fn():
-    model_name = os.getenv("EMBEDDING_MODEL", "BAAI/bge-large-en-v1.5")
-    return embedding_functions.SentenceTransformerEmbeddingFunction(model_name=model_name)
+    return embedding_functions.DefaultEmbeddingFunction()
 
 
 def _create_vector_index() -> Collection:
@@ -35,23 +34,30 @@ def _create_vector_index() -> Collection:
 def load_vector_index() -> Collection:
     """
     Returns a cached ChromaDB collection when running inside a Streamlit app,
-    or a fresh instance when called from CLI scripts (build_index, etc.).
+    or a fresh instance when called from FastAPI / CLI scripts.
 
-    Using st.cache_resource means the heavy SentenceTransformer model and the
-    ChromaDB client are initialised only once per Streamlit server process,
-    dramatically reducing memory usage and cold-start time on every rerun.
+    Uses st.cache_resource only when Streamlit's runtime is actually active,
+    preventing a thread deadlock when Streamlit is installed but not running
+    (e.g. when called from the FastAPI backend or CLI scripts).
     """
     try:
         import streamlit as st
+        import streamlit.runtime as st_runtime
 
-        @st.cache_resource(show_spinner="Loading vector index…")
-        def _cached() -> Collection:
+        # Only use the Streamlit cache when a real Streamlit server is running.
+        # st.runtime.exists() returns False outside a running Streamlit app.
+        if st_runtime.exists():
+            @st.cache_resource(show_spinner="Loading vector index…")
+            def _cached() -> Collection:
+                return _create_vector_index()
+
+            return _cached()
+        else:
+            # FastAPI / CLI context — return a plain (uncached) instance
             return _create_vector_index()
 
-        return _cached()
-
     except ImportError:
-        # Running outside Streamlit (e.g. scripts/build_index.py)
+        # Streamlit not installed at all
         return _create_vector_index()
 
 

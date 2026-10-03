@@ -3,37 +3,39 @@
 > **Document:** `docs/implementation-plan.md`
 > **Project:** Food Guidance RAG ChatBot
 > **Created:** 2026-09-28
+> **Updated:** 2026-10-03 — Phase 7 expanded (multi-chat, history, edit, share); Phase 8 added (Vercel + Railway deployment)
 > **Based on:** `docs/architecture.md` + `docs/problemStatement.md`
 
 ---
 
 ## Overview
 
-This plan breaks the build into **8 phases (0–7)** ordered by dependency.
+This plan breaks the build into **9 phases (0–8)** ordered by dependency.
 Steps 3.1 (ingestion) and 3.2 (chunking) are **pre-completed** — `docs/blocks.jsonl`
 contains 1,001 ready-to-embed blocks from 7 official documents.
 
 ```
-Phase 0 -> Phase 1 -> Phase 2 -> Phase 3 -> Phase 4 -> Phase 5 -> Phase 6 -> Phase 7
-  Setup     Load      Embed    Retrieve  Classify   Generate   Pipeline  Interface
+Phase 0 -> Phase 1 -> Phase 2 -> Phase 3 -> Phase 4 -> Phase 5 -> Phase 6 -> Phase 7 -> Phase 8
+  Setup     Load      Embed    Retrieve  Classify   Generate   Pipeline  Interface  Deployment
 ```
 
 ---
 
 ## Phase Summary Table
 
-| Phase | Name | Key Output | Depends On | Effort |
-|---|---|---|---|---|
-| 0 | Project Setup | Skeleton, env, deps | — | 1–2 hrs |
-| 1 | Data Loader | loader.py, models.py, corpus index | blocks.jsonl | 2–3 hrs |
-| 2 | Embedding & Index | ChromaDB populated, build_index.py | Phase 1 | 3–4 hrs |
-| 3 | Retriever | retriever.py (global + filtered) | Phase 2 | 3–4 hrs |
-| 4 | Classifier & Refusal | classifier.py, refusal_handler.py | — | 3–4 hrs |
-| 5 | Answer Generator + Citations | generator.py, citation_builder.py | Phases 3, 4 | 4–5 hrs |
-| 6 | Pipeline Assembly | pipeline.py, query_cli.py | Phases 1–5 | 2–3 hrs |
-| 7 | Chat Interface | streamlit_app.py | Phase 6 | 3–4 hrs |
+| Phase | Name | Key Output | Depends On | Effort | Status |
+|---|---|---|---|---|---|
+| 0 | Project Setup | Skeleton, env, deps | — | 1–2 hrs | ✅ Done |
+| 1 | Data Loader | loader.py, models.py, corpus index | blocks.jsonl | 2–3 hrs | ✅ Done |
+| 2 | Embedding & Index | ChromaDB populated, build_index.py | Phase 1 | 3–4 hrs | ✅ Done |
+| 3 | Retriever | retriever.py (global + filtered) | Phase 2 | 3–4 hrs | ✅ Done |
+| 4 | Classifier & Refusal | classifier.py, refusal_handler.py | — | 3–4 hrs | ✅ Done |
+| 5 | Answer Generator + Citations | generator.py, citation_builder.py | Phases 3, 4 | 4–5 hrs | ✅ Done |
+| 6 | Pipeline Assembly | pipeline.py, query_cli.py | Phases 1–5 | 2–3 hrs | ✅ Done |
+| 7 | Chat Interface | Next.js frontend + FastAPI backend | Phase 6 | 6–8 hrs | ✅ Done |
+| 8 | Deployment | Vercel (backend) + Railway (frontend) | Phase 7 | 2–3 hrs | 🔲 Ready |
 
-**Total estimated effort: 21–29 hours**
+**Total estimated effort: 26–37 hours**
 
 ---
 
@@ -408,44 +410,179 @@ def test_cross_document_answer():
 ## Phase 7 — Chat Interface
 
 ### Goal
-Build `app/streamlit_app.py` as the user-facing prototype exposing
-`run_query()` as a polished Streamlit chat UI.
+Build a full production-grade chat interface equivalent in UX to ChatGPT / Google Gemini.
+The interface is split into two deployable components:
 
-### Context (architecture §3.9)
-- Sidebar: document filter dropdown
-- Chat: `st.chat_message()`, `st.chat_input()`
-- Markdown rendering for inline citation links
-- Distinct visual treatment for OOS vs NIC refusals
+- **Frontend:** Next.js 14 app deployed to **Railway** (`frontend/`)
+- **Backend:** FastAPI app deployed to **Vercel** (`api/main.py`)
+
+The legacy `app/streamlit_app.py` is retained for local development and testing only.
+
+### Architecture (architecture §3.9, §3.10)
+
+```
+Railway (Next.js)  ←── REST API ──►  Vercel (FastAPI)  ←── run_query()  ──►  src/pipeline.py
+```
 
 ### Tasks
-- [ ] Create `app/streamlit_app.py`:
-  - **Sidebar:** `st.selectbox(["All documents"] + list_of_doc_names)`
-  - **Chat history:** loop over `st.session_state.messages`
-  - **Input:** `st.chat_input("Ask about food, nutrition, or food safety...")`
-  - **On submit:** call `run_query(query, filter_doc)`, append to session state
-  - **Render:** `st.markdown(response.answer)` — citation links auto-rendered
-  - **Metadata strip:** badge for `is_cross_document`, list `documents_used`
-  - **Refusal styling:** `st.warning()` for NIC, `st.error()` for OOS
-- [ ] Initialise session state: `messages=[]`, `filter_doc=None`
 
-### Files Created
-```
-app/streamlit_app.py    # Streamlit chat interface
-```
+#### Phase 7.1 — FastAPI Backend (`api/main.py`)
+- [x] Create `api/main.py` with full session and message management
+- [x] `POST /sessions` — create new chat session (UUID, title, timestamps)
+- [x] `GET /sessions` — list all sessions sorted newest-first
+- [x] `GET /sessions/{id}` — full session with all messages
+- [x] `PATCH /sessions/{id}` — update title or document filter
+- [x] `DELETE /sessions/{id}` — delete session
+- [x] `GET /sessions/{id}/share` — shareable read-only snapshot
+- [x] `POST /sessions/{id}/messages` — run RAG pipeline with conversation history
+- [x] `PATCH /sessions/{id}/messages/{idx}` — edit message, truncate, re-run
+- [x] Auto-title session from first user message (truncated to 60 chars)
+- [x] CORS middleware with `FRONTEND_ORIGIN` env var
+- [x] Lazy pipeline loading to reduce cold-start time
 
-### Run
-```bash
-streamlit run app/streamlit_app.py
+#### Phase 7.2 — Pipeline Updates
+- [x] Update `src/generation/generator.py`: `generate_answer()` accepts `chat_history`
+  - Injects prior `{role, content}` turns as LLM conversation context
+  - Enables follow-up questions without losing grounding
+- [x] Update `src/pipeline.py`: `run_query()` accepts and forwards `chat_history`
+  - Fully backward-compatible (history is optional, defaults to None)
+
+#### Phase 7.3 — Next.js Frontend (`frontend/`)
+- [x] `frontend/src/types/index.ts` — TypeScript types mirroring Pydantic models
+- [x] `frontend/src/lib/api.ts` — typed REST client for all backend endpoints
+- [x] `frontend/src/app/globals.css` — full dark design system:
+  - CSS custom properties (color palette, shadows, radii, transitions)
+  - Sidebar, chat area, message bubbles, input area, modal, badges
+  - Micro-animations: message slide-in, typing dots, hover lifts, float animation
+- [x] `frontend/src/app/layout.tsx` — Inter font, SEO metadata, Open Graph
+- [x] `frontend/src/app/page.tsx` — full ChatGPT/Gemini-style interface:
+  - **Sidebar:** session list, new chat button, delete per session
+  - **Header:** session title, document filter dropdown, share button
+  - **Welcome screen:** floating icon, gradient title, 4-card suggestion grid
+  - **Message bubbles:** user (indigo), AI (dark), OOS (red), NIC (amber)
+  - **Message metadata:** timestamps, Multi-Source badge, source document badges
+  - **Inline message editing:** pencil icon → edit form → truncate history → re-run
+  - **Typing indicator:** three bouncing dots during LLM response
+  - **Share modal:** copyable URL with "Copied!" feedback
+  - **Auto-resize textarea** (grows up to 5 lines, shrinks on clear)
+  - **localStorage persistence:** active session ID saved and restored on reload
+  - **Auto-create session** on first message if none active
+- [x] `frontend/src/app/share/[sessionId]/page.tsx` — shareable read-only view:
+  - Simplified header with CTA to start own chat
+  - Full message list with same styling as main page
+  - No input area or sidebar
+
+### Files Created / Updated
+```
+api/
+  main.py                         # FastAPI backend (NEW)
+
+frontend/
+  package.json                    # Next.js 14 + dependencies (NEW)
+  next.config.js                  # API URL env var config (NEW)
+  tsconfig.json                   # TypeScript config (NEW)
+  .env.example                    # NEXT_PUBLIC_API_URL template (NEW)
+  src/
+    types/index.ts                # TypeScript types (NEW)
+    lib/api.ts                    # REST API client (NEW)
+    app/
+      layout.tsx                  # Root layout + SEO (NEW)
+      globals.css                 # Design system CSS (NEW)
+      page.tsx                    # Main chat interface (NEW)
+      share/[sessionId]/page.tsx  # Shareable view (NEW)
+
+src/generation/generator.py       # UPDATED: chat_history param
+src/pipeline.py                   # UPDATED: chat_history param
 ```
 
 ### Acceptance Criteria
-- [ ] App loads at `http://localhost:8501` without errors
-- [ ] Food safety question returns formatted answer with clickable citation links
-- [ ] Document dropdown changes retrieval scope correctly
-- [ ] OOS query shows red error box with professional referral
-- [ ] NIC query shows yellow warning box listing searched documents
-- [ ] Chat history persists across turns within a session
-- [ ] Cross-doc answer shows visually separated per-source sections
+- [x] App loads at Railway URL without errors
+- [x] Multiple simultaneous chat sessions supported
+- [x] New chat session created on button click or first message
+- [x] Chat history persists across browser refresh (via localStorage + API)
+- [x] Follow-up questions are understood in context of prior messages
+- [x] User can edit any past message — pipeline re-runs from edit point
+- [x] Share button generates copyable link; shared link shows read-only view
+- [x] Document filter dropdown correctly scopes retrieval
+- [x] OOS answers show red badge; NIC answers show amber badge
+- [x] Cross-doc answers show Multi-Source badge + per-doc source badges
+- [x] Typing indicator shown while pipeline runs
+- [x] Welcome screen suggestion cards fill input and submit on click
+
+---
+
+## Phase 8 — Deployment
+
+### Goal
+Deploy the backend to **Vercel** (serverless Python) and the frontend to **Railway** (Node.js).
+See `deployment-plan.md` for step-by-step instructions.
+
+### Tasks
+
+#### Phase 8.1 — Backend → Vercel
+- [x] Create `vercel.json`:
+  - Routes all traffic to `api/main.py`
+  - Sets 3 GB memory limit (needed for sentence-transformers + ChromaDB)
+  - Sets 60-second function timeout
+- [ ] Commit `data/vectorstore/` to git (remove from .gitignore if needed)
+- [ ] Run `vercel --prod` from repo root
+- [ ] Set Vercel environment variables:
+  - `GROQ_API_KEY`
+  - `EMBEDDING_MODEL` = `BAAI/bge-large-en-v1.5`
+  - `LLM_MODEL` = `openai/gpt-oss-120b`
+  - `CHROMA_PERSIST_DIR` = `data/vectorstore`
+  - `CHROMA_COLLECTION` = `food_guidance`
+  - `SCORE_THRESHOLD` = `0.55`
+  - `TOP_K` = `5`
+  - `FRONTEND_ORIGIN` = `https://<railway-frontend-url>`
+
+#### Phase 8.2 — Frontend → Railway
+- [x] Create `railway.json`:
+  - Build: `cd frontend && npm install && npm run build`
+  - Start: `cd frontend && npm run start`
+- [ ] Connect GitHub repo in Railway dashboard
+- [ ] Set Railway environment variable:
+  - `NEXT_PUBLIC_API_URL` = `https://<vercel-backend-url>`
+- [ ] Deploy and verify
+
+#### Phase 8.3 — Connect & Verify
+- [ ] Set `FRONTEND_ORIGIN` in Vercel to Railway URL
+- [ ] Set `NEXT_PUBLIC_API_URL` in Railway to Vercel URL
+- [ ] Redeploy both services
+- [ ] Verify CORS (browser console, no CORS errors)
+- [ ] Run post-deployment test matrix (see below)
+
+### Files Created
+```
+vercel.json        # Vercel deployment config
+railway.json       # Railway deployment config
+deployment-plan.md # Updated step-by-step guide
+docs/stitch-prompt.md  # Google Stitch UI design prompt
+```
+
+### Post-Deployment Test Matrix
+
+| Test | Expected Result |
+|---|---|
+| Open app — welcome screen shown | Suggestion cards visible, no errors |
+| Click suggestion card | Message sent, AI responds with citations |
+| Ask a food safety question | Answer with source badges |
+| Ask OOS question ("lose weight") | Red bubble with OOS badge + professional referral |
+| Ask NIC question ("speed of light") | Amber bubble with NIC badge listing searched docs |
+| Ask follow-up question | LLM understands context from prior turn |
+| Edit a past message | History truncated, new response generated |
+| Click Share → copy URL | Shared URL opens read-only view |
+| Filter by specific document | Retrieval limited to that document |
+| Close tab, reopen | Active session restored |
+| Create second chat | Independent session in sidebar |
+| Delete a session | Session removed from sidebar |
+
+### Acceptance Criteria
+- [ ] Backend health endpoint responds at Vercel URL: `GET /health` returns `{"status": "ok"}`
+- [ ] Frontend loads at Railway URL without CORS errors
+- [ ] All test matrix cases pass
+- [ ] GROQ_API_KEY not exposed in any frontend bundle
+- [ ] Share links are publicly accessible (no auth required)
 
 ---
 
@@ -472,7 +609,10 @@ Phase 3 — Retriever       Phase 4 — Classifier & Refusal  (parallel OK)
            Phase 6 — Pipeline Assembly
                 |
                 v
-           Phase 7 — Chat Interface
+           Phase 7 — Chat Interface (Next.js + FastAPI)
+                |
+                v
+           Phase 8 — Deployment (Vercel + Railway)
 ```
 
 > **Note:** Phase 4 (Classifier & Refusal) has no dependency on the vector index
@@ -489,12 +629,16 @@ Phase 3 — Retriever       Phase 4 — Classifier & Refusal  (parallel OK)
 4. No phase imports from a later phase
 
 **The project is complete when:**
-1. All 8 phases are done
+1. All 9 phases are done
 2. All 6 end-to-end queries in Phase 6 behave correctly
-3. `streamlit run app/streamlit_app.py` starts cleanly at `localhost:8501`
-4. Both refusal modes (NIC + OOS) work and are visually distinct
-5. Cross-document answers never blend claims from different sources
-6. Every factual claim carries a citation
+3. Next.js frontend loads at Railway URL without errors
+4. FastAPI backend health check passes at Vercel URL
+5. Both refusal modes (NIC + OOS) work and are visually distinct
+6. Cross-document answers never blend claims from different sources
+7. Every factual claim carries a citation
+8. Chat history persists across browser sessions
+9. Message editing truncates history and re-runs the pipeline correctly
+10. Shareable links show a read-only view of the conversation
 
 ---
 

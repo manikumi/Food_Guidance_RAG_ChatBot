@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}
+
+@keyframes sessionSlideIn {
+  from { opacity: 0; transform: translateX(-14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.session-item-animate {
+  animation: sessionSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes sharePulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55), 0 0 12px rgba(16, 185, 129, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(16, 185, 129, 0), 0 0 18px rgba(16, 185, 129, 0.4);
+  }
+}
+
+.share-btn-pulse {
+  animation: sharePulse 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.user-bubble-glow {
+  box-shadow: 0 10px 25px -4px rgba(99, 102, 241, 0.32), 0 2px 8px rgba(99, 102, 241, 0.18);
+}
+
+.ai-container-shadow {
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.65), 0 2px 6px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+html {
+    color-scheme: dark;
+}
