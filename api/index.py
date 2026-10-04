@@ -33,11 +33,15 @@ _get_all_document_names = None
 def _ensure_pipeline():
     global _pipeline_loaded, run_query, _get_all_document_names
     if not _pipeline_loaded:
-        from src.pipeline import run_query as _rq
-        from src.retrieval.retriever import _get_all_document_names as _gadn
-        run_query = _rq
-        _get_all_document_names = _gadn
-        _pipeline_loaded = True
+        try:
+            from src.pipeline import run_query as _rq
+            from src.retrieval.retriever import _get_all_document_names as _gadn
+            run_query = _rq
+            _get_all_document_names = _gadn
+            _pipeline_loaded = True
+        except Exception as e:
+            import traceback
+            raise HTTPException(status_code=500, detail=f"Pipeline initialization failed: {str(e)}\n\nTraceback: {traceback.format_exc()}")
 
 
 # ---------------------------------------------------------------------------
