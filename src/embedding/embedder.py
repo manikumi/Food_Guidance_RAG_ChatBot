@@ -1,4 +1,10 @@
 import os
+import sys
+
+if os.getenv("VERCEL") == "1":
+    __import__('pysqlite3')
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+
 import chromadb
 from chromadb.utils import embedding_functions
 from chromadb.api import Collection
@@ -18,6 +24,17 @@ def get_embedding_fn():
 def _create_vector_index() -> Collection:
     """Creates (or opens) the ChromaDB persistent collection."""
     persist_dir = os.getenv("CHROMA_PERSIST_DIR", "data/vectorstore")
+    
+    if os.getenv("VERCEL") == "1":
+        import shutil
+        tmp_dir = "/tmp/vectorstore"
+        if not os.path.exists(tmp_dir):
+            if os.path.exists(persist_dir):
+                shutil.copytree(persist_dir, tmp_dir)
+            else:
+                os.makedirs(tmp_dir, exist_ok=True)
+        persist_dir = tmp_dir
+        
     collection_name = os.getenv("CHROMA_COLLECTION", "food_guidance")
 
     client = chromadb.PersistentClient(path=persist_dir)
