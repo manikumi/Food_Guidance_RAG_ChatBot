@@ -96,14 +96,6 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------------------------
-# Debug Route
-# ---------------------------------------------------------------------------
-from fastapi import Request
-@app.get("/debug/{path_name:path}")
-def debug(request: Request, path_name: str):
-    return {"path_name": path_name, "raw_url": str(request.url), "headers": dict(request.headers)}
-
-# ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
 @app.get("/health")
@@ -317,12 +309,4 @@ def edit_message(session_id: str, message_index: int, body: EditMessageRequest):
         "user_message": user_msg.model_dump(),
         "assistant_message": assistant_msg.model_dump(),
         "messages": s["messages"],
-    }
-
-@app.api_route("/{path_name:path}", methods=["GET", "POST", "PATCH", "DELETE"])
-async def catch_all(request: Request, path_name: str):
-    return {
-        "message": "Catch-all triggered. This means FastAPI didn't find the route you wanted.",
-        "path_received_by_fastapi": path_name,
-        "raw_url": str(request.url),
     }
