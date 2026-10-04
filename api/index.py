@@ -82,6 +82,7 @@ app = FastAPI(
     title="Food Guidance RAG ChatBot API",
     description="Backend API for the Dietary Guidance RAG ChatBot",
     version="1.0.0",
+    root_path="/api"
 )
 
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "*")
