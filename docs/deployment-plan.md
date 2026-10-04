@@ -53,7 +53,7 @@ Go to: **Project Settings → Environment Variables**
 | Variable | Value |
 |---|---|
 | `GROQ_API_KEY` | `gsk_...` (your key) |
-| `EMBEDDING_MODEL` | `BAAI/bge-large-en-v1.5` |
+| `EMBEDDING_MODEL` | `small` |
 | `LLM_MODEL` | `openai/gpt-oss-120b` |
 | `CHROMA_PERSIST_DIR` | `data/vectorstore` |
 | `CHROMA_COLLECTION` | `food_guidance` |
