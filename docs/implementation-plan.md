@@ -3,7 +3,7 @@
 > **Document:** `docs/implementation-plan.md`
 > **Project:** Food Guidance RAG ChatBot
 > **Created:** 2026-09-28
-> **Updated:** 2026-10-03 — Phase 7 expanded (multi-chat, history, edit, share); Phase 8 added (Vercel + Railway deployment)
+> **Updated:** 2026-10-04 — Phase 8 completed (Vercel + Railway deployment)
 > **Based on:** `docs/architecture.md` + `docs/problemStatement.md`
 
 ---
@@ -33,7 +33,7 @@ Phase 0 -> Phase 1 -> Phase 2 -> Phase 3 -> Phase 4 -> Phase 5 -> Phase 6 -> Pha
 | 5 | Answer Generator + Citations | generator.py, citation_builder.py | Phases 3, 4 | 4–5 hrs | ✅ Done |
 | 6 | Pipeline Assembly | pipeline.py, query_cli.py | Phases 1–5 | 2–3 hrs | ✅ Done |
 | 7 | Chat Interface | Next.js frontend + FastAPI backend | Phase 6 | 6–8 hrs | ✅ Done |
-| 8 | Deployment | Vercel (backend) + Railway (frontend) | Phase 7 | 2–3 hrs | 🔲 Ready |
+| 8 | Deployment | Vercel (backend) + Railway (frontend) | Phase 7 | 2–3 hrs | ✅ Done |
 
 **Total estimated effort: 26–37 hours**
 
@@ -524,9 +524,9 @@ See `deployment-plan.md` for step-by-step instructions.
   - Routes all traffic to `api/main.py`
   - Sets 3 GB memory limit (needed for sentence-transformers + ChromaDB)
   - Sets 60-second function timeout
-- [ ] Commit `data/vectorstore/` to git (remove from .gitignore if needed)
-- [ ] Run `vercel --prod` from repo root
-- [ ] Set Vercel environment variables:
+- [x] Commit `data/vectorstore/` to git (remove from .gitignore if needed)
+- [x] Run `vercel --prod` from repo root
+- [x] Set Vercel environment variables:
   - `GROQ_API_KEY`
   - `EMBEDDING_MODEL` = `BAAI/bge-large-en-v1.5`
   - `LLM_MODEL` = `openai/gpt-oss-120b`
@@ -540,17 +540,17 @@ See `deployment-plan.md` for step-by-step instructions.
 - [x] Create `railway.json`:
   - Build: `cd frontend && npm install && npm run build`
   - Start: `cd frontend && npm run start`
-- [ ] Connect GitHub repo in Railway dashboard
-- [ ] Set Railway environment variable:
+- [x] Connect GitHub repo in Railway dashboard
+- [x] Set Railway environment variable:
   - `NEXT_PUBLIC_API_URL` = `https://<vercel-backend-url>`
-- [ ] Deploy and verify
+- [x] Deploy and verify
 
 #### Phase 8.3 — Connect & Verify
-- [ ] Set `FRONTEND_ORIGIN` in Vercel to Railway URL
-- [ ] Set `NEXT_PUBLIC_API_URL` in Railway to Vercel URL
-- [ ] Redeploy both services
-- [ ] Verify CORS (browser console, no CORS errors)
-- [ ] Run post-deployment test matrix (see below)
+- [x] Set `FRONTEND_ORIGIN` in Vercel to Railway URL
+- [x] Set `NEXT_PUBLIC_API_URL` in Railway to Vercel URL
+- [x] Redeploy both services
+- [x] Verify CORS (browser console, no CORS errors)
+- [x] Run post-deployment test matrix (see below)
 
 ### Files Created
 ```
@@ -578,11 +578,11 @@ docs/stitch-prompt.md  # Google Stitch UI design prompt
 | Delete a session | Session removed from sidebar |
 
 ### Acceptance Criteria
-- [ ] Backend health endpoint responds at Vercel URL: `GET /health` returns `{"status": "ok"}`
-- [ ] Frontend loads at Railway URL without CORS errors
-- [ ] All test matrix cases pass
-- [ ] GROQ_API_KEY not exposed in any frontend bundle
-- [ ] Share links are publicly accessible (no auth required)
+- [x] Backend health endpoint responds at Vercel URL: `GET /health` returns `{"status": "ok"}`
+- [x] Frontend loads at Railway URL without CORS errors
+- [x] All test matrix cases pass
+- [x] GROQ_API_KEY not exposed in any frontend bundle
+- [x] Share links are publicly accessible (no auth required)
 
 ---
 

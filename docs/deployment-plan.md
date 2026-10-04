@@ -1,5 +1,9 @@
 # 🚀 Deployment Guide — Backend (Vercel) + Frontend (Railway)
 
+> **Status:** ✅ Deployment Completed (Phase 8 Done)
+> **Backend:** Deployed and active on Vercel
+> **Frontend:** Deployed and active on Railway
+
 ## Architecture
 
 ```

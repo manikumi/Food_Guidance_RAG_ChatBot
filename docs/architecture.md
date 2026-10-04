@@ -3,7 +3,7 @@
 > **Document:** `docs/architecture.md`
 > **Project:** Food Guidance RAG ChatBot
 > **Created:** 2026-09-28
-> **Updated:** 2026-10-03 — reflects Phase 7 completion, FastAPI backend (Vercel), Next.js frontend (Railway), multi-session chat with conversation history
+> **Updated:** 2026-10-04 — reflects Phase 8 completion, FastAPI backend deployed to Vercel, Next.js frontend deployed to Railway
 
 ---
 
