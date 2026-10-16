@@ -3,7 +3,8 @@
 > **Document:** `docs/implementation-plan.md`
 > **Project:** Food Guidance RAG ChatBot
 > **Created:** 2026-09-28
-> **Updated:** 2026-10-04 — Phase 8 completed (Vercel + Railway deployment)
+> **Updated:** 2026-10-16 — Phase 8 completed (Full-stack Vercel deployment)
+> **Live URL:** [https://food-guidance-rag-chat-bot-vdgr.vercel.app/](https://food-guidance-rag-chat-bot-vdgr.vercel.app/)
 > **Based on:** `docs/architecture.md` + `docs/problemStatement.md`
 
 ---
@@ -33,7 +34,7 @@ Phase 0 -> Phase 1 -> Phase 2 -> Phase 3 -> Phase 4 -> Phase 5 -> Phase 6 -> Pha
 | 5 | Answer Generator + Citations | generator.py, citation_builder.py | Phases 3, 4 | 4–5 hrs | ✅ Done |
 | 6 | Pipeline Assembly | pipeline.py, query_cli.py | Phases 1–5 | 2–3 hrs | ✅ Done |
 | 7 | Chat Interface | Next.js frontend + FastAPI backend | Phase 6 | 6–8 hrs | ✅ Done |
-| 8 | Deployment | Vercel (backend) + Railway (frontend) | Phase 7 | 2–3 hrs | ✅ Done |
+| 8 | Deployment | Vercel full-stack (Next.js + FastAPI serverless) | Phase 7 | 2–3 hrs | ✅ Done |
 
 **Total estimated effort: 26–37 hours**
 
@@ -49,28 +50,30 @@ Bootstrap the repository, virtual environment, configuration, and all dependenci
 - [ ] Initialise virtual environment: `python -m venv .venv`
 - [ ] Create `.env`:
   ```
-  OPENAI_API_KEY=sk-...
   GROQ_API_KEY=gsk-...
-  EMBEDDING_MODEL=BAAI/bge-large-en-v1.5
-  LLM_MODEL=qwen/qwen3.6-27b
+  EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
+  LLM_MODEL=openai/gpt-oss-120b
   CHROMA_PERSIST_DIR=data/vectorstore
-  CHROMA_COLLECTION=food_guidance
-  SCORE_THRESHOLD=0.35
+  CHROMA_COLLECTION=food_guidance_onnx
+  SCORE_THRESHOLD=0.55
   TOP_K=5
   ```
 - [ ] Create `requirements.txt`:
   ```
   openai>=1.0.0
   groq>=0.4.0
-  chromadb>=0.4.0
-  sentence-transformers>=2.2.0
+  chromadb>=0.5.0
+  pysqlite3-binary>=0.5.0
+  numpy<2.0.0
   python-dotenv>=1.0.0
-  streamlit>=1.30.0
   fastapi>=0.110.0
   uvicorn>=0.27.0
   pytest>=8.0.0
   rich>=13.0.0
   ```
+  > **Note:** `sentence-transformers` is NOT used. ChromaDB's built-in ONNX backend
+  > handles embedding with `BAAI/bge-small-en-v1.5` directly. `pysqlite3-binary`
+  > provides the SQLite version required by ChromaDB on Linux/Vercel.
 - [ ] Install: `pip install -r requirements.txt`
 - [ ] Create `data/vectorstore/` (empty, gitignored)
 - [ ] Add `.gitignore`: `.env`, `data/vectorstore/`, `__pycache__/`, `.venv/`
@@ -91,7 +94,7 @@ src/generation/__init__.py
 ```
 
 ### Acceptance Criteria
-- [ ] `python -c "import openai, groq, chromadb, streamlit; print('OK')"` exits cleanly
+- [ ] `python -c "import openai, groq, chromadb; print('OK')"` exits cleanly
 - [ ] `docs/blocks.jsonl` readable, 1,001 lines
 - [ ] `.env` loads via `python-dotenv` without errors
 
@@ -173,8 +176,8 @@ Embed all `ChunkRecord` objects into ChromaDB. Create `scripts/build_index.py`
 as the single offline pipeline command that replaces the old `build_corpus.py`.
 
 ### Context (architecture §3.3)
-- Embedding: `BAAI/bge-large-en-v1.5` (via `sentence-transformers`)
-- Vector store: ChromaDB persistent at `data/vectorstore/`
+- Embedding: `BAAI/bge-small-en-v1.5` (via ChromaDB's built-in ONNX backend — no `sentence-transformers` required)
+- Vector store: ChromaDB persistent at `data/vectorstore/`, collection name `food_guidance_onnx`
 - Metadata stored per chunk: `document_id`, `document_name`, `publisher`, `year`,
   `source_url`, `section_heading`, `chunk_type`, `page_number`
 
@@ -411,22 +414,22 @@ def test_cross_document_answer():
 
 ### Goal
 Build a full production-grade chat interface equivalent in UX to ChatGPT / Google Gemini.
-The interface is split into two deployable components:
+The interface is split into two components, both served by a single **Vercel** deployment:
 
-- **Frontend:** Next.js 14 app deployed to **Railway** (`frontend/`)
-- **Backend:** FastAPI app deployed to **Vercel** (`api/main.py`)
+- **Frontend:** Next.js 14 app (`frontend/`) — served as static/SSR pages
+- **Backend:** FastAPI app (`api/index.py`) — Vercel Serverless Python functions under `/api/*`
 
 The legacy `app/streamlit_app.py` is retained for local development and testing only.
 
 ### Architecture (architecture §3.9, §3.10)
 
 ```
-Railway (Next.js)  ←── REST API ──►  Vercel (FastAPI)  ←── run_query()  ──►  src/pipeline.py
+Vercel (Next.js frontend)  ←── /api/* REST ──►  Vercel (FastAPI serverless)  ←── run_query()  ──►  src/pipeline.py
 ```
 
 ### Tasks
 
-#### Phase 7.1 — FastAPI Backend (`api/main.py`)
+#### Phase 7.1 — FastAPI Backend (`api/index.py`)
 - [x] Create `api/main.py` with full session and message management
 - [x] `POST /sessions` — create new chat session (UUID, title, timestamps)
 - [x] `GET /sessions` — list all sessions sorted newest-first
@@ -475,21 +478,23 @@ Railway (Next.js)  ←── REST API ──►  Vercel (FastAPI)  ←── run
 ### Files Created / Updated
 ```
 api/
-  main.py                         # FastAPI backend (NEW)
+  index.py                        # FastAPI backend (Vercel entry point)
 
 frontend/
-  package.json                    # Next.js 14 + dependencies (NEW)
-  next.config.js                  # API URL env var config (NEW)
-  tsconfig.json                   # TypeScript config (NEW)
-  .env.example                    # NEXT_PUBLIC_API_URL template (NEW)
+  package.json                    # Next.js 14 + dependencies
+  next.config.js                  # API URL env var config
+  tsconfig.json                   # TypeScript config
+  tailwind.config.ts              # Tailwind CSS design system
+  nixpacks.toml                   # Build config
+  .env.example                    # NEXT_PUBLIC_API_URL template
   src/
-    types/index.ts                # TypeScript types (NEW)
-    lib/api.ts                    # REST API client (NEW)
+    types/index.ts                # TypeScript types
+    lib/api.ts                    # REST API client
     app/
-      layout.tsx                  # Root layout + SEO (NEW)
-      globals.css                 # Design system CSS (NEW)
-      page.tsx                    # Main chat interface (NEW)
-      share/[sessionId]/page.tsx  # Shareable view (NEW)
+      layout.tsx                  # Root layout + SEO
+      globals.css                 # CSS
+      page.tsx                    # Main chat interface
+      share/[sessionId]/page.tsx  # Shareable view
 
 src/generation/generator.py       # UPDATED: chat_history param
 src/pipeline.py                   # UPDATED: chat_history param
@@ -514,50 +519,42 @@ src/pipeline.py                   # UPDATED: chat_history param
 ## Phase 8 — Deployment
 
 ### Goal
-Deploy the backend to **Vercel** (serverless Python) and the frontend to **Railway** (Node.js).
-See `deployment-plan.md` for step-by-step instructions.
+Deploy the full stack — both the Next.js frontend and the FastAPI backend — to **Vercel** as a single project.
+See [`docs/deployment-plan.md`](deployment-plan.md) for step-by-step instructions.
+
+**Live URL:** [https://food-guidance-rag-chat-bot-vdgr.vercel.app/](https://food-guidance-rag-chat-bot-vdgr.vercel.app/)
 
 ### Tasks
 
-#### Phase 8.1 — Backend → Vercel
-- [x] Create `vercel.json`:
-  - Routes all traffic to `api/main.py`
-  - Sets 3 GB memory limit (needed for sentence-transformers + ChromaDB)
-  - Sets 60-second function timeout
-- [x] Commit `data/vectorstore/` to git (remove from .gitignore if needed)
+#### Phase 8.1 — Full-Stack → Vercel
+- [x] Configure Vercel project:
+  - Framework: Next.js
+  - Build command: `cd frontend && npm install && npm run build`
+  - Output directory: `frontend/.next`
+  - Python serverless functions automatically detected from `api/index.py`
+- [x] Commit `data/vectorstore/` to git (remove from `.gitignore`)
 - [x] Run `vercel --prod` from repo root
 - [x] Set Vercel environment variables:
   - `GROQ_API_KEY`
-  - `EMBEDDING_MODEL` = `BAAI/bge-large-en-v1.5`
+  - `EMBEDDING_MODEL` = `BAAI/bge-small-en-v1.5`
   - `LLM_MODEL` = `openai/gpt-oss-120b`
   - `CHROMA_PERSIST_DIR` = `data/vectorstore`
-  - `CHROMA_COLLECTION` = `food_guidance`
+  - `CHROMA_COLLECTION` = `food_guidance_onnx`
   - `SCORE_THRESHOLD` = `0.55`
   - `TOP_K` = `5`
-  - `FRONTEND_ORIGIN` = `https://<railway-frontend-url>`
+  - `NEXT_PUBLIC_API_URL` = `https://food-guidance-rag-chat-bot-vdgr.vercel.app`
+  - `FRONTEND_ORIGIN` = `https://food-guidance-rag-chat-bot-vdgr.vercel.app`
 
-#### Phase 8.2 — Frontend → Railway
-- [x] Create `railway.json`:
-  - Build: `cd frontend && npm install && npm run build`
-  - Start: `cd frontend && npm run start`
-- [x] Connect GitHub repo in Railway dashboard
-- [x] Set Railway environment variable:
-  - `NEXT_PUBLIC_API_URL` = `https://<vercel-backend-url>`
-- [x] Deploy and verify
-
-#### Phase 8.3 — Connect & Verify
-- [x] Set `FRONTEND_ORIGIN` in Vercel to Railway URL
-- [x] Set `NEXT_PUBLIC_API_URL` in Railway to Vercel URL
-- [x] Redeploy both services
+#### Phase 8.2 — Verify
 - [x] Verify CORS (browser console, no CORS errors)
+- [x] Test `/api/health` returns `{"status": "ok"}`
 - [x] Run post-deployment test matrix (see below)
 
 ### Files Created
 ```
-vercel.json        # Vercel deployment config
-railway.json       # Railway deployment config
-deployment-plan.md # Updated step-by-step guide
-docs/stitch-prompt.md  # Google Stitch UI design prompt
+frontend/nixpacks.toml    # Build hints for Vercel/Nixpacks
+docs/deployment-plan.md   # Step-by-step deployment guide
+docs/stitch-prompt.md     # Google Stitch UI design prompt
 ```
 
 ### Post-Deployment Test Matrix
@@ -578,11 +575,12 @@ docs/stitch-prompt.md  # Google Stitch UI design prompt
 | Delete a session | Session removed from sidebar |
 
 ### Acceptance Criteria
-- [x] Backend health endpoint responds at Vercel URL: `GET /health` returns `{"status": "ok"}`
-- [x] Frontend loads at Railway URL without CORS errors
+- [x] Backend health endpoint responds: `GET /api/health` returns `{"status": "ok"}`
+- [x] Frontend loads at Vercel URL without CORS errors
 - [x] All test matrix cases pass
 - [x] GROQ_API_KEY not exposed in any frontend bundle
 - [x] Share links are publicly accessible (no auth required)
+- [x] Live URL: https://food-guidance-rag-chat-bot-vdgr.vercel.app/
 
 ---
 
@@ -612,7 +610,7 @@ Phase 3 — Retriever       Phase 4 — Classifier & Refusal  (parallel OK)
            Phase 7 — Chat Interface (Next.js + FastAPI)
                 |
                 v
-           Phase 8 — Deployment (Vercel + Railway)
+           Phase 8 — Deployment (Vercel full-stack)
 ```
 
 > **Note:** Phase 4 (Classifier & Refusal) has no dependency on the vector index
@@ -631,8 +629,8 @@ Phase 3 — Retriever       Phase 4 — Classifier & Refusal  (parallel OK)
 **The project is complete when:**
 1. All 9 phases are done
 2. All 6 end-to-end queries in Phase 6 behave correctly
-3. Next.js frontend loads at Railway URL without errors
-4. FastAPI backend health check passes at Vercel URL
+3. Next.js frontend loads at Vercel URL without errors: https://food-guidance-rag-chat-bot-vdgr.vercel.app/
+4. FastAPI backend health check passes: `GET /api/health` returns `{"status": "ok"}`
 5. Both refusal modes (NIC + OOS) work and are visually distinct
 6. Cross-document answers never blend claims from different sources
 7. Every factual claim carries a citation
